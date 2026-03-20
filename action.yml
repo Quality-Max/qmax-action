@@ -1,0 +1,122 @@
+name: 'QualityMax Test Runner'
+description: 'Run QualityMax tests in your CI/CD pipeline. AI-powered test automation with quality gates.'
+author: 'QualityMax'
+
+branding:
+  icon: 'check-circle'
+  color: 'purple'
+
+inputs:
+  api-token:
+    description: 'QualityMax API token (from Settings > API Tokens)'
+    required: true
+  project-id:
+    description: 'QualityMax project ID'
+    required: true
+  script-ids:
+    description: 'Comma-separated script IDs to run (omit for all)'
+    required: false
+    default: ''
+  base-url:
+    description: 'Base URL override for tests (e.g. preview deploy URL)'
+    required: false
+    default: ''
+  browser:
+    description: 'Browser to use: chromium, firefox, webkit'
+    required: false
+    default: 'chromium'
+  comment:
+    description: 'Post results as PR comment (true/false)'
+    required: false
+    default: 'true'
+  fail-on-test-failure:
+    description: 'Fail the action if any test fails (true/false)'
+    required: false
+    default: 'true'
+  qmax-version:
+    description: 'qmax CLI version to install (default: latest)'
+    required: false
+    default: 'latest'
+
+outputs:
+  status:
+    description: 'Overall status: passed or failed'
+    value: ${{ steps.run-tests.outputs.status }}
+  total:
+    description: 'Total number of tests'
+    value: ${{ steps.run-tests.outputs.total }}
+  passed:
+    description: 'Number of passed tests'
+    value: ${{ steps.run-tests.outputs.passed }}
+  failed:
+    description: 'Number of failed tests'
+    value: ${{ steps.run-tests.outputs.failed }}
+  duration:
+    description: 'Total duration in seconds'
+    value: ${{ steps.run-tests.outputs.duration }}
+  summary:
+    description: 'Markdown summary of results'
+    value: ${{ steps.run-tests.outputs.summary }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install qmax CLI
+      shell: bash
+      run: |
+        if [ "${{ inputs.qmax-version }}" = "latest" ]; then
+          curl -sL https://raw.githubusercontent.com/Quality-Max/qmax-local-agent/main/install.sh | bash
+        else
+          QMAX_VERSION="${{ inputs.qmax-version }}" curl -sL https://raw.githubusercontent.com/Quality-Max/qmax-local-agent/main/install.sh | bash
+        fi
+        echo "$HOME/.qmax" >> $GITHUB_PATH
+
+    - name: Run tests
+      id: run-tests
+      shell: bash
+      env:
+        QMAX_TOKEN: ${{ inputs.api-token }}
+      run: |
+        ARGS="ci run --project-id ${{ inputs.project-id }} --headless --browser ${{ inputs.browser }}"
+
+        if [ -n "${{ inputs.script-ids }}" ]; then
+          ARGS="$ARGS --script-ids ${{ inputs.script-ids }}"
+        else
+          ARGS="$ARGS --all"
+        fi
+
+        if [ -n "${{ inputs.base-url }}" ]; then
+          ARGS="$ARGS --base-url ${{ inputs.base-url }}"
+        fi
+
+        # Run tests (qmax ci handles GITHUB_OUTPUT and GITHUB_STEP_SUMMARY)
+        qmax $ARGS || true
+
+    - name: Comment on PR
+      if: inputs.comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        if [ -z "${{ steps.run-tests.outputs.summary }}" ]; then
+          echo "No test summary to post"
+          exit 0
+        fi
+
+        # Delete previous QualityMax comments
+        COMMENTS=$(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments --jq '.[] | select(.body | contains("QualityMax Test Results")) | .id')
+        for id in $COMMENTS; do
+          gh api repos/${{ github.repository }}/issues/comments/$id -X DELETE 2>/dev/null || true
+        done
+
+        # Post new comment
+        gh pr comment ${{ github.event.pull_request.number }} --body "${{ steps.run-tests.outputs.summary }}"
+
+    - name: Check results
+      if: inputs.fail-on-test-failure == 'true'
+      shell: bash
+      run: |
+        if [ "${{ steps.run-tests.outputs.status }}" = "failed" ]; then
+          echo "::error::QualityMax tests failed (${{ steps.run-tests.outputs.failed }} failures)"
+          exit 1
+        fi
