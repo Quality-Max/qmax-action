@@ -1,3 +1,24 @@
+> **Archived: migrate to [QualityMax GitHub Action](https://github.com/Quality-Max/qualitymax-github-action).**
+> The examples below describe the retired integration. Start new workflows from the maintained Action's README and review the migration notes here before changing an existing workflow.
+
+## Migration to the maintained Action
+
+Changing only the `uses` repository is not sufficient. Compare the two action manifests and update your workflow:
+
+| Archived input/output | Maintained integration |
+| --- | --- |
+| `api-token` input | `api-key` input; store the credential in GitHub Actions secrets |
+| `comment` input | `post-pr-comment` input |
+| `script-ids` input | Review `test-suite` and `test-ids`; do not assume script IDs and test IDs are interchangeable |
+| `project-id` input | Still supported; the maintained Action also documents `project-name` and repository detection |
+| `base-url`, `browser`, `fail-on-test-failure` | Same input names; check current defaults and behavior |
+| `qmax-version` input | No corresponding input in the maintained Action |
+| `total`, `passed`, `failed`, `duration`, `summary` outputs | `total-tests`, `passed-tests`, `failed-tests`, `duration-seconds`, `summary-markdown` |
+
+Recreate test selection, permissions, and result handling from the [maintained configuration reference](https://github.com/Quality-Max/qualitymax-github-action#inputs). Validate a completed run on a test project before making the new check required. See [QualityMax documentation](https://docs.qualitymax.io/) and the [gate guide](https://docs.qualitymax.io/code-review-gates/) for the separate GitHub App workflow.
+
+---
+
 # QualityMax Test Runner
 
 Run [QualityMax](https://qualitymax.io) tests in your CI/CD pipeline. AI-powered test automation with quality gates.
